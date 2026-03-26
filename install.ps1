@@ -1,8 +1,8 @@
 # Muxit Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/lampmaker/muxit.io/main/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/muxit-io/muxit/main/install.ps1 | iex
 
 $ErrorActionPreference = 'Stop'
-$repo = 'lampmaker/muxit.io'
+$repo = 'muxit-io/muxit'
 $installDir = Join-Path $env:LOCALAPPDATA 'muxit'
 $asset = 'muxit-win-x64.zip'
 
