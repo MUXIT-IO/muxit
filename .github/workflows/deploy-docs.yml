@@ -1,0 +1,47 @@
+name: Deploy Docs
+
+on:
+  repository_dispatch:
+    types: [deploy-docs]
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout docs source
+        uses: actions/checkout@v4
+        with:
+          repository: lampmaker/centralcommand
+          token: ${{ secrets.CENTRALCOMMAND_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Build docs
+        working-directory: docs-site
+        env:
+          VITEPRESS_BASE: /muxit/
+          VITEPRESS_OUTDIR: .vitepress/dist
+        run: npx vitepress build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/.vitepress/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
