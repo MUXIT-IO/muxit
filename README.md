@@ -7,14 +7,14 @@ Control instruments, robots, sensors, and cameras through a unified interface wi
 ## Quick Install (Windows)
 
 ```powershell
-irm https://raw.githubusercontent.com/lampmaker/muxit.io/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/muxit-io/muxit/main/install.ps1 | iex
 ```
 
 This downloads the latest release to `%LOCALAPPDATA%\muxit` and adds it to your PATH.
 
 ## Manual Install
 
-1. Download the latest `muxit-win-x64.zip` from [Releases](https://github.com/lampmaker/muxit.io/releases/latest)
+1. Download the latest `muxit-win-x64.zip` from [Releases](https://github.com/muxit-io/muxit/releases/latest)
 2. Extract to a folder of your choice
 3. Run `MuxitServer.exe`
 
@@ -72,4 +72,4 @@ Your workspace (scripts, connectors, dashboards, configs) is preserved during up
 ## Links
 
 - [Documentation](https://muxit.io) (coming soon)
-- [Report Issues](https://github.com/lampmaker/muxit.io/issues)
+- [Report Issues](https://github.com/muxit-io/muxit/issues)
