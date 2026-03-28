@@ -33,9 +33,12 @@ jobs:
       - name: Build docs
         working-directory: docs-site
         env:
-          VITEPRESS_BASE: /muxit/
+          VITEPRESS_BASE: /
           VITEPRESS_OUTDIR: .vitepress/dist
         run: npx vitepress build
+
+      - name: Add CNAME for custom domain
+        run: echo "docs.muxit.io" > docs-site/.vitepress/dist/CNAME
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
