@@ -19,8 +19,8 @@ jobs:
       - name: Checkout docs source
         uses: actions/checkout@v4
         with:
-          repository: lampmaker/centralcommand
-          token: ${{ secrets.CENTRALCOMMAND_TOKEN }}
+          repository: muxit-io/muxit-development
+          token: ${{ secrets.MUXIT_DEV_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
