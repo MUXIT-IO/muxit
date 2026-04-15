@@ -31,7 +31,7 @@ if (-not $downloadUrl) {
 Write-Host " $tag" -ForegroundColor Green
 
 # 2. Check if already installed and same version
-$exe = Join-Path $installDir 'MuxitServer.exe'
+$exe = Join-Path $installDir 'muxit.exe'
 if (Test-Path $exe) {
     $current = & $exe --version 2>$null
     if ($current -and $current.Contains($tag.TrimStart('v'))) {
