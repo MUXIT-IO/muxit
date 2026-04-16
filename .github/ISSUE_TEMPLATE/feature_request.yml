@@ -1,0 +1,58 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for Muxit
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement! Please describe the feature and the problem it solves.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem are you trying to solve? What's the current workflow and why is it painful?
+      placeholder: When running long experiments, I have to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the feature you'd like to see. Include API sketches, UI mockups, or example scripts if helpful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about, existing workarounds, or how similar tools handle this.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Muxit does this affect?
+      options:
+        - Automation / scripting
+        - Dashboards / UI
+        - AI integration
+        - Drivers / hardware
+        - CLI / installer
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, links, related issues, or anything else that helps.
+    validations:
+      required: false

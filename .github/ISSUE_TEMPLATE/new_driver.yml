@@ -1,0 +1,116 @@
+name: New Driver Request
+description: Request support for a new instrument, robot, sensor, or camera
+title: "[Driver]: <vendor> <model>"
+labels: ["driver", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for requesting driver support! The more details you can provide, the faster we can scope and implement the driver.
+
+  - type: input
+    id: vendor
+    attributes:
+      label: Vendor / manufacturer
+      placeholder: Keysight, Thorlabs, FLIR, Arduino, ...
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model / part number
+      placeholder: 34461A, KDC101, Blackfly S, Uno R3, ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Device category
+      options:
+        - Instrument (DMM, scope, power supply, SMU, ...)
+        - Motion / robotics (stage, arm, gantry, ...)
+        - Sensor (temperature, pressure, force, ...)
+        - Camera / imaging
+        - Signal generator / source
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: interfaces
+    attributes:
+      label: Connection interface(s)
+      description: Select all that apply.
+      options:
+        - label: USB
+        - label: Ethernet / LAN (TCP/IP, VXI-11, HiSLIP)
+        - label: Serial (RS-232, RS-485)
+        - label: GPIB
+        - label: USB-TMC / VISA
+        - label: Bluetooth / wireless
+        - label: Vendor SDK / proprietary DLL
+        - label: Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Protocol / command set
+      description: SCPI, Modbus, vendor SDK, REST, custom? Link to the programming guide if available.
+      placeholder: SCPI over USB-TMC, see manual section 5 (link)
+    validations:
+      required: true
+
+  - type: textarea
+    id: operations
+    attributes:
+      label: Key operations needed
+      description: Which functions / measurements / actions are essential in the first cut?
+      placeholder: |
+        - Read DC voltage
+        - Set measurement range
+        - Trigger on external input
+    validations:
+      required: true
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: Documentation / resources
+      description: Links to datasheets, programming manuals, existing open-source drivers, or vendor SDKs.
+      placeholder: |
+        - Programming guide: https://...
+        - Existing Python driver: https://...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: access
+    attributes:
+      label: Hardware access for testing
+      description: Can you test a prototype driver against the real device?
+      options:
+        - "Yes, I have the device and can test"
+        - "Sometimes / limited access"
+        - "No, I do not have the device"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: How do you plan to use this device with Muxit?
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Firmware version, OS quirks, known issues, related devices, etc.
+    validations:
+      required: false
