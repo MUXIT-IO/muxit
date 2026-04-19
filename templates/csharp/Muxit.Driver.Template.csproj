@@ -1,0 +1,14 @@
+<!-- SPDX-License-Identifier: MIT -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Muxit.Driver.Template</RootNamespace>
+    <!-- Change this to your driver's output name, e.g. "MyRobot" produces MyRobot.dll -->
+    <AssemblyName>Template</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\sdk\Muxit.Driver.Sdk.csproj" />
+  </ItemGroup>
+</Project>
