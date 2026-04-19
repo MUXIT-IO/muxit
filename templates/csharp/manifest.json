@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "your-publisher/my-device",
+  "name": "My Device",
+  "version": "0.1.0",
+  "entryPoint": "Template.dll",
+  "tier": 3,
+  "description": "Replace this with a one-line description of what your driver controls. Aim for at least 40 characters so the marketplace listing is useful.",
+  "author": { "name": "Your Name" },
+  "group": "instruments",
+  "tags": ["template", "example"]
+}
