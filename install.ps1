@@ -1,125 +1,160 @@
-# Muxit Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/muxit-io/muxit/main/install.ps1 | iex
+# Muxit installer for Windows
+#
+# Usage (end-user):
+#   irm https://raw.githubusercontent.com/muxit-io/muxit/main/install.ps1 | iex
+#
+# Or with options:
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/muxit-io/muxit/main/install.ps1))) -InstallPath "C:\Tools\Muxit"
+#
+# This script:
+#   1. Queries the GitHub Releases API for the latest Muxit release.
+#   2. Downloads the muxit-win-x64-v<version>.zip release archive and checksums.txt.
+#   3. Verifies the SHA256.
+#   4. Extracts into %LOCALAPPDATA%\Muxit (or -InstallPath override).
+#      Existing workspace/ directory is preserved (never overwritten).
+#   5. Creates a Start Menu shortcut to muxit.exe.
+#   6. Prints the launch URL.
+
+[CmdletBinding()]
+param(
+    [string]$InstallPath = (Join-Path $env:LOCALAPPDATA 'Muxit'),
+    [switch]$NoShortcut,
+    [switch]$NoLaunch
+)
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'  # speeds up Invoke-WebRequest for zip download
+
 $repo = 'muxit-io/muxit'
-$installDir = Join-Path $env:LOCALAPPDATA 'muxit'
-$asset = 'muxit-win-x64.zip'
+# Release archives are versioned (e.g. "muxit-win-x64-v0.3.0.zip"). We match by
+# pattern so legacy un-versioned assets ("muxit-win-x64.zip") still resolve.
+$zipPattern = 'muxit-win-x64*.zip'
+$checksumName = 'checksums.txt'
 
-Write-Host ''
-Write-Host '  Muxit Installer' -ForegroundColor Cyan
-Write-Host '  ===============' -ForegroundColor Cyan
-Write-Host ''
+function Write-Section($msg) {
+    Write-Host ""
+    Write-Host "== $msg ==" -ForegroundColor Cyan
+}
 
-# 1. Get latest release info from GitHub API
-Write-Host '  Fetching latest release...' -NoNewline
+Write-Section "Muxit Installer"
+Write-Host "  Install path: $InstallPath"
+
+# 1. Fetch release metadata
+Write-Section "Fetching latest release"
 try {
-    $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'muxit-installer' }
-    $tag = $release.tag_name
-    $downloadUrl = ($release.assets | Where-Object { $_.name -eq $asset }).browser_download_url
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -UseBasicParsing
 } catch {
-    Write-Host ' FAILED' -ForegroundColor Red
-    Write-Host "  Could not reach GitHub API. Check your internet connection." -ForegroundColor Red
-    exit 1
+    throw "Failed to reach GitHub Releases API: $($_.Exception.Message)"
 }
+$tag = $release.tag_name
+Write-Host "  Version: $tag"
 
-if (-not $downloadUrl) {
-    Write-Host ' FAILED' -ForegroundColor Red
-    Write-Host "  Asset '$asset' not found in release $tag." -ForegroundColor Red
-    exit 1
-}
-Write-Host " $tag" -ForegroundColor Green
+$zipAsset = $release.assets | Where-Object { $_.name -like $zipPattern } | Select-Object -First 1
+if (-not $zipAsset) { throw "Release $tag is missing a $zipPattern asset" }
+$zipName = $zipAsset.name
 
-# 2. Check if already installed and same version
-$exe = Join-Path $installDir 'muxit.exe'
-if (Test-Path $exe) {
-    $current = & $exe --version 2>$null
-    if ($current -and $current.Contains($tag.TrimStart('v'))) {
-        Write-Host "  Already up to date ($tag)." -ForegroundColor Green
-        Write-Host ''
-        exit 0
-    }
-    Write-Host "  Updating existing installation..." -ForegroundColor Yellow
-} else {
-    Write-Host "  Installing to $installDir"
-}
+$checksumAsset = $release.assets | Where-Object { $_.name -eq $checksumName } | Select-Object -First 1
 
-# 3. Download
-$tempZip = Join-Path $env:TEMP "muxit-$tag.zip"
-Write-Host "  Downloading $asset..." -NoNewline
-try {
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $tempZip -UseBasicParsing
-} catch {
-    Write-Host ' FAILED' -ForegroundColor Red
-    Write-Host "  Download failed: $_" -ForegroundColor Red
-    exit 1
-}
-$sizeMB = [math]::Round((Get-Item $tempZip).Length / 1MB, 1)
-Write-Host " ${sizeMB} MB" -ForegroundColor Green
+# 2. Download zip + checksums
+Write-Section "Downloading $zipName"
+$tempDir = Join-Path $env:TEMP "muxit-install-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+$zipPath = Join-Path $tempDir $zipName
+Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath -UseBasicParsing
+$sizeMB = '{0:N1}' -f ((Get-Item $zipPath).Length / 1MB)
+Write-Host "  Downloaded ($sizeMB MB)"
 
-# 4. Extract (preserve workspace if it exists)
-$tempExtract = Join-Path $env:TEMP "muxit-extract-$tag"
-if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force }
-
-Write-Host '  Extracting...' -NoNewline
-Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
-Write-Host ' OK' -ForegroundColor Green
-
-# 5. Install — merge into install dir
-if (-not (Test-Path $installDir)) {
-    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-}
-
-# Copy binary and non-workspace files (overwrite)
-$extractedFiles = Get-ChildItem $tempExtract -File
-foreach ($f in $extractedFiles) {
-    Copy-Item $f.FullName (Join-Path $installDir $f.Name) -Force
-}
-
-# Merge workspace: only copy files that don't already exist (preserve user data)
-$extractedWorkspace = Join-Path $tempExtract 'workspace'
-if (Test-Path $extractedWorkspace) {
-    $existingWorkspace = Join-Path $installDir 'workspace'
-    if (-not (Test-Path $existingWorkspace)) {
-        # Fresh install — copy entire workspace
-        Copy-Item $extractedWorkspace $existingWorkspace -Recurse -Force
-    } else {
-        # Update — only overwrite driver DLLs, preserve user files
-        foreach ($tier in @('community', 'premium')) {
-            $srcTier = Join-Path $extractedWorkspace "drivers\$tier"
-            $dstTier = Join-Path $existingWorkspace "drivers\$tier"
-            if (Test-Path $srcTier) {
-                if (-not (Test-Path $dstTier)) { New-Item -ItemType Directory -Path $dstTier -Force | Out-Null }
-                Get-ChildItem $srcTier -Filter '*.dll' | ForEach-Object {
-                    Copy-Item $_.FullName (Join-Path $dstTier $_.Name) -Force
-                }
-            }
+# 3. Verify checksum
+if ($checksumAsset) {
+    Write-Section "Verifying checksum"
+    $checksumPath = Join-Path $tempDir $checksumName
+    Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksumPath -UseBasicParsing
+    $expected = (Get-Content $checksumPath | Where-Object { $_ -match "\s+$zipName$" } | Select-Object -First 1)
+    if ($expected) {
+        $expectedHash = ($expected -split '\s+')[0].ToLower()
+        $actualHash = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLower()
+        if ($expectedHash -ne $actualHash) {
+            throw "Checksum mismatch! Expected $expectedHash, got $actualHash"
         }
+        Write-Host "  OK ($actualHash)"
+    } else {
+        Write-Warning "No SHA256 entry for $zipName in $checksumName; skipping verification."
+    }
+} else {
+    Write-Warning "No checksums.txt asset in release; skipping verification."
+}
+
+# 4. Stop any running muxit.exe so we can overwrite its files
+$running = Get-Process -Name 'muxit' -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Section "Stopping running Muxit"
+    $running | Stop-Process -Force
+    Start-Sleep -Seconds 1
+}
+
+# 5. Extract into install path. Preserve an existing workspace/ directory if present.
+Write-Section "Installing to $InstallPath"
+New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
+
+$existingWorkspace = Join-Path $InstallPath 'workspace'
+$hasWorkspace = Test-Path $existingWorkspace
+if ($hasWorkspace) {
+    Write-Host "  Preserving existing workspace/ directory"
+}
+
+# Remove old server files (but keep workspace/ and anything the user added there).
+# We scrub only the top-level files and the directories we ship.
+$shipped = @('muxit.exe', 'muxit.pdb')
+Get-ChildItem -Path $InstallPath -File -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Extension -in @('.dll', '.exe', '.pdb', '.json', '.xml') -or $_.Name -in $shipped) {
+        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+    }
+}
+foreach ($sub in @('wwwroot', 'runtimes', 'Assets', 'workspace-template')) {
+    $p = Join-Path $InstallPath $sub
+    if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Expand-Archive -Path $zipPath -DestinationPath $InstallPath -Force
+Write-Host "  Extracted."
+
+# 6. Start Menu shortcut
+$exe = Join-Path $InstallPath 'muxit.exe'
+if (-not (Test-Path $exe)) {
+    throw "muxit.exe not found at $exe after extraction"
+}
+
+if (-not $NoShortcut) {
+    Write-Section "Creating Start Menu shortcut"
+    $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    $lnkPath = Join-Path $startMenu 'Muxit.lnk'
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $lnk = $shell.CreateShortcut($lnkPath)
+        $lnk.TargetPath = $exe
+        $lnk.WorkingDirectory = $InstallPath
+        $lnk.Description = 'Muxit — hardware orchestration platform'
+        $lnk.Save()
+        Write-Host "  $lnkPath"
+    } catch {
+        Write-Warning "Could not create Start Menu shortcut: $($_.Exception.Message)"
     }
 }
 
-# 6. Add to PATH if not already there
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($userPath -notlike "*$installDir*") {
-    Write-Host '  Adding to PATH...' -NoNewline
-    [Environment]::SetEnvironmentVariable('Path', "$userPath;$installDir", 'User')
-    $env:Path = "$env:Path;$installDir"
-    Write-Host ' OK' -ForegroundColor Green
-}
+# 7. Cleanup temp files
+Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 
-# 7. Cleanup
-Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+# 8. Report + optionally launch
+Write-Section "Done"
+Write-Host "  Installed: $exe"
+Write-Host "  Version:   $tag"
+Write-Host ""
+Write-Host "  Launch Muxit:" -ForegroundColor Green
+Write-Host "    & `"$exe`""
+Write-Host "  Then open http://127.0.0.1:8765 in your browser."
+Write-Host ""
 
-# 8. Verify
-Write-Host ''
-$version = & $exe --version 2>$null
-if ($version) {
-    Write-Host "  Installed: $version" -ForegroundColor Green
-} else {
-    Write-Host "  Installed to: $installDir" -ForegroundColor Green
+if (-not $NoLaunch) {
+    Write-Host "Starting Muxit..." -ForegroundColor Green
+    Start-Process -FilePath $exe -WorkingDirectory $InstallPath
 }
-Write-Host ''
-Write-Host '  Run `muxit` to start, or `muxit --gui` to open in browser.' -ForegroundColor Cyan
-Write-Host '  Dashboard: http://localhost:8765' -ForegroundColor Cyan
-Write-Host ''
