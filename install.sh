@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# Muxit installer for Linux (Ubuntu / Debian / derivatives).
+#
+# Usage (end-user):
+#   curl -fsSL https://raw.githubusercontent.com/muxit-io/muxit/main/install.sh | bash
+#
+# Or with options:
+#   curl -fsSL https://raw.githubusercontent.com/muxit-io/muxit/main/install.sh | bash -s -- --no-apt
+#
+# Flags:
+#   --install-dir <path>    Override install dir (default: $HOME/.local/share/muxit).
+#   --no-apt                Skip apt-install of system dependencies (ffmpeg etc.).
+#                           Useful for unattended re-installs or non-apt distros.
+#   --no-symlink            Skip creating ~/.local/bin/muxit.
+#   --yes                   Don't prompt for confirmation; assume yes everywhere.
+#
+# What this script does:
+#   1. Detects distro (apt-only for v1; clear error otherwise).
+#   2. Installs system packages with sudo apt: ffmpeg, libayatana-appindicator3-1,
+#      xdg-utils. Asks for confirmation unless --yes.
+#   3. Adds $USER to the `dialout` group if needed (serial-port access).
+#   4. Queries GitHub Releases API for the latest muxit-linux-x64-v*.tar.gz.
+#   5. Downloads the tarball + checksums.txt and verifies SHA256.
+#   6. Stops any running muxit, then extracts into ~/.local/share/muxit/.
+#      An existing workspace/ directory is preserved (never overwritten).
+#   7. Symlinks ~/.local/bin/muxit → installdir/muxit so it's on $PATH.
+#   8. Prints how to launch.
+#
+# Per-user install: no sudo for the extract step, only for `apt install` and
+# `usermod`. Nothing outside of ~/.local/{share,bin}/ is touched on disk.
+
+set -euo pipefail
+
+# ─── Defaults ────────────────────────────────────────────────────────────
+INSTALL_DIR="${HOME}/.local/share/muxit"
+DO_APT=1
+DO_SYMLINK=1
+ASSUME_YES=0
+REPO="muxit-io/muxit"
+TARBALL_PATTERN='muxit-linux-x64-v.*\.tar\.gz$'
+
+# ─── Colors / helpers ───────────────────────────────────────────────────────
+if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+  C_BOLD=$'\033[1m'; C_CYAN=$'\033[36m'; C_GREEN=$'\033[32m'
+  C_YELLOW=$'\033[33m'; C_RED=$'\033[31m'; C_RESET=$'\033[0m'
+else
+  C_BOLD=""; C_CYAN=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_RESET=""
+fi
+
+section() { printf "\n%s== %s ==%s\n" "$C_CYAN" "$1" "$C_RESET"; }
+info()    { printf "  %s\n" "$1"; }
+ok()      { printf "  %s✓%s %s\n" "$C_GREEN" "$C_RESET" "$1"; }
+warn()    { printf "  %s⚠%s %s\n" "$C_YELLOW" "$C_RESET" "$1"; }
+die()     { printf "\n%sError:%s %s\n" "$C_RED" "$C_RESET" "$1" >&2; exit 1; }
+
+confirm() {
+  local prompt="$1"
+  if [[ $ASSUME_YES -eq 1 ]]; then return 0; fi
+  read -r -p "  $prompt [Y/n] " ans </dev/tty || return 1
+  [[ -z "$ans" || "$ans" =~ ^[Yy]$ ]]
+}
+
+# ─── Args ───────────────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+    --no-apt)      DO_APT=0; shift ;;
+    --no-symlink)  DO_SYMLINK=0; shift ;;
+    --yes|-y)      ASSUME_YES=1; shift ;;
+    -h|--help)     sed -n '2,30p' "$0"; exit 0 ;;
+    *)             die "Unknown option: $1 (use --help)" ;;
+  esac
+done
+
+# ─── Sanity ───────────────────────────────────────────────────────────────────
+section "Muxit installer"
+info "Install dir: $INSTALL_DIR"
+
+# Need: curl, tar, sha256sum (or shasum), getent
+for cmd in curl tar getent; do
+  command -v "$cmd" >/dev/null 2>&1 || die "Required command '$cmd' is not on PATH."
+done
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+  SHA="shasum -a 256"
+else
+  die "Neither sha256sum nor shasum is available."
+fi
+
+# ─── 1. Detect distro for apt step ──────────────────────────────────────────────
+if [[ $DO_APT -eq 1 ]]; then
+  if ! command -v apt-get >/dev/null 2>&1; then
+    warn "apt-get not found — this script's auto-install supports Ubuntu/Debian only."
+    warn "Skipping system-package install. Install manually: ffmpeg libayatana-appindicator3-1 xdg-utils"
+    DO_APT=0
+  fi
+fi
+
+# ─── 2. System packages ───────────────────────────────────────────────────────────────
+if [[ $DO_APT -eq 1 ]]; then
+  section "System packages"
+  pkgs_needed=()
+  # ffmpeg → required for Onvif RTSP capture (subprocess pipeline).
+  command -v ffmpeg >/dev/null 2>&1 || pkgs_needed+=("ffmpeg")
+  # libayatana-appindicator3-1 → system-tray icon (cosmetic; server runs without).
+  if ! ldconfig -p 2>/dev/null | grep -q "libayatana-appindicator3.so"; then
+    pkgs_needed+=("libayatana-appindicator3-1")
+  fi
+  # xdg-utils → auto-open browser at startup (cosmetic; URL is logged either way).
+  command -v xdg-open >/dev/null 2>&1 || pkgs_needed+=("xdg-utils")
+
+  if [[ ${#pkgs_needed[@]} -eq 0 ]]; then
+    ok "All system dependencies already installed."
+  else
+    info "Need to install: ${pkgs_needed[*]}"
+    if confirm "Run 'sudo apt install ${pkgs_needed[*]}'?"; then
+      sudo apt update
+      sudo apt install -y "${pkgs_needed[@]}"
+      ok "Packages installed."
+    else
+      warn "Skipped. Install manually later: sudo apt install ${pkgs_needed[*]}"
+    fi
+  fi
+fi
+
+# ─── 3. dialout group ─────────────────────────────────────────────────────────────────
+section "Hardware access (dialout group)"
+if id -nG "$USER" | tr ' ' '\n' | grep -qx dialout; then
+  ok "User '$USER' is already in 'dialout' group."
+else
+  warn "User '$USER' is NOT in 'dialout' group — serial-port drivers will fail with 'Permission denied'."
+  if confirm "Add '$USER' to 'dialout' group with sudo?"; then
+    sudo usermod -aG dialout "$USER"
+    warn "You must log out and back in (or run 'newgrp dialout') for the group change to take effect."
+  else
+    warn "Skipped. Fix later: sudo usermod -aG dialout $USER && newgrp dialout"
+  fi
+fi
+
+# ─── 4. Find latest release ─────────────────────────────────────────────────────────────
+section "Latest release"
+release_json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" \
+  || die "Failed to query GitHub Releases API."
+
+tag="$(printf '%s' "$release_json" | grep -oE '"tag_name":\s*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+[[ -n "$tag" ]] || die "Could not parse tag_name from GitHub Releases API."
+info "Version: $tag"
+
+tar_url="$(printf '%s' "$release_json" \
+  | grep -oE '"browser_download_url":\s*"[^"]+"' \
+  | sed -E 's/.*"([^"]+)".*/\1/' \
+  | grep -E "$TARBALL_PATTERN" | head -1)"
+[[ -n "$tar_url" ]] || die "Release $tag has no muxit-linux-x64-v*.tar.gz asset."
+
+cs_url="$(printf '%s' "$release_json" \
+  | grep -oE '"browser_download_url":\s*"[^"]+"' \
+  | sed -E 's/.*"([^"]+)".*/\1/' \
+  | grep -E '/checksums\.txt$' | head -1)"
+
+# ─── 5. Download + verify ───────────────────────────────────────────────────────────────
+tmpdir="$(mktemp -d -t muxit-install-XXXXXX)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+section "Downloading"
+tar_name="$(basename "$tar_url")"
+info "$tar_name"
+curl -fsSL --output "$tmpdir/$tar_name" "$tar_url"
+size_mb="$(du -m "$tmpdir/$tar_name" | cut -f1)"
+ok "Downloaded (${size_mb} MB)"
+
+if [[ -n "$cs_url" ]]; then
+  section "Verifying checksum"
+  curl -fsSL --output "$tmpdir/checksums.txt" "$cs_url"
+  expected="$(grep "  ${tar_name}\$" "$tmpdir/checksums.txt" | awk '{print $1}' || true)"
+  if [[ -z "$expected" ]]; then
+    warn "checksums.txt has no entry for $tar_name — skipping verification."
+  else
+    actual="$(cd "$tmpdir" && $SHA "$tar_name" | awk '{print $1}')"
+    if [[ "$expected" != "$actual" ]]; then
+      die "Checksum mismatch! Expected $expected, got $actual"
+    fi
+    ok "OK ($actual)"
+  fi
+else
+  warn "No checksums.txt asset in release — skipping verification."
+fi
+
+# ─── 6. Stop any running muxit, then extract ─────────────────────────────────────────
+if pgrep -u "$USER" -x muxit >/dev/null 2>&1; then
+  section "Stopping running muxit"
+  pkill -u "$USER" -x muxit || true
+  sleep 1
+fi
+
+section "Installing to $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+
+# Preserve user's workspace/ directory across re-installs.
+preserved_ws=""
+if [[ -d "$INSTALL_DIR/workspace" ]]; then
+  preserved_ws="$tmpdir/workspace.bak"
+  info "Preserving existing workspace/ directory"
+  mv "$INSTALL_DIR/workspace" "$preserved_ws"
+fi
+
+# Wipe shipped subdirs and top-level files we recognise; leave anything
+# else the user dropped into the dir alone.
+for sub in wwwroot runtimes Assets workspace-template; do
+  rm -rf "$INSTALL_DIR/$sub"
+done
+find "$INSTALL_DIR" -maxdepth 1 -type f \
+  \( -name 'muxit' -o -name '*.dll' -o -name '*.so' -o -name '*.json' -o -name '*.xml' -o -name '*.pdb' \) \
+  -delete 2>/dev/null || true
+
+tar -xzf "$tmpdir/$tar_name" -C "$INSTALL_DIR"
+
+if [[ -n "$preserved_ws" ]]; then
+  rm -rf "$INSTALL_DIR/workspace"
+  mv "$preserved_ws" "$INSTALL_DIR/workspace"
+fi
+
+[[ -x "$INSTALL_DIR/muxit" ]] || die "muxit binary not found / not executable at $INSTALL_DIR/muxit after extract."
+ok "Extracted."
+
+# ─── 7. Symlink in ~/.local/bin ─────────────────────────────────────────────────────────────
+if [[ $DO_SYMLINK -eq 1 ]]; then
+  section "Symlink"
+  bin_dir="$HOME/.local/bin"
+  mkdir -p "$bin_dir"
+  ln -sfn "$INSTALL_DIR/muxit" "$bin_dir/muxit"
+  ok "$bin_dir/muxit → $INSTALL_DIR/muxit"
+
+  # Heads-up if ~/.local/bin isn't on PATH (rare on modern Ubuntu, common on minimal Debian).
+  case ":$PATH:" in
+    *":$bin_dir:"*) ;;
+    *) warn "$bin_dir is NOT on \$PATH. Add this to ~/.bashrc:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+  esac
+fi
+
+# ─── 8. Done ─────────────────────────────────────────────────────────────────────────
+section "Done"
+info "Installed: $INSTALL_DIR/muxit"
+info "Version:   $tag"
+printf "\n%sLaunch Muxit:%s\n" "$C_GREEN" "$C_RESET"
+printf "  muxit\n"
+info "Then open http://127.0.0.1:8765 in your browser."
