@@ -1,22 +1,18 @@
 # Contributing to Muxit
 
-Thanks for your interest in Muxit. There are several ways to contribute,
-and you don't have to be a .NET developer to help.
+Muxit is a private, commercial project. The application core, SDK,
+templates, and installer scripts in this repository are developed by
+the Muxit team, and **we don't accept external pull requests for
+those parts**.
 
-## Where to ask questions
-
-- **General questions, ideas, "how do I…"**: open a thread in
-  [GitHub Discussions](https://github.com/muxit-io/muxit/discussions).
-- **Bugs and feature requests**: open an [issue](https://github.com/muxit-io/muxit/issues/new/choose)
-  using one of the templates.
-- **Security vulnerabilities**: see [SECURITY.md](SECURITY.md). Do
-  **not** file a public issue.
+The one place where outside contributions are welcomed and expected is
+**drivers**.
 
 ## Writing a driver
 
-Most contributions to Muxit's hardware coverage take the form of
-**drivers** rather than core changes. The repository contains everything
-you need to build one:
+Drivers are how Muxit talks to hardware, and the driver ecosystem is
+intentionally open. This repository contains everything you need to
+build one:
 
 - [`sdk/`](sdk/) — the .NET 8 SDK that Tier 3 (DLL) drivers link
   against.
@@ -27,32 +23,20 @@ you need to build one:
 
 Finished drivers are submitted as PRs to the
 [muxit-io/driver-registry](https://github.com/muxit-io/driver-registry)
-repository. See the README in each template folder for the full
-workflow.
+repository — not to this repo. See the README in each template folder
+for the full workflow, and the registry's own README for submission
+rules and licensing.
 
-## Pull requests to this repository
+## Reporting bugs and asking questions
 
-For changes to the SDK, templates, or installer scripts:
+Even though the codebase isn't open for contributions, feedback is
+very welcome:
 
-1. If the change is non-trivial, open an issue or discussion first so
-   we can agree on the direction before code is written.
-2. Fork the repo and create a topic branch from `main`.
-3. Keep PRs small and focused on a single concern.
-4. Use the PR template — describe what changed and how to test it.
-5. By submitting a PR, you agree that your contribution is licensed
-   under the [Apache License 2.0](LICENSE).
-
-## Code style
-
-- C# code in `sdk/` and `templates/csharp/` follows the default .NET
-  formatting (`dotnet format`).
-- Shell and PowerShell scripts in the root follow the existing style
-  in `install.sh` and `install.ps1`: explicit error handling, no
-  silent failures.
-
-## Reporting hardware issues
-
-If you've found a bug while using Muxit with specific hardware, please
-include the hardware model, firmware version, and how it's connected
-(USB, serial port, network) in the issue. The bug report template
-prompts for this — fill it in as completely as you can.
+- **Bugs and feature requests**: open an [issue](https://github.com/muxit-io/muxit/issues/new/choose)
+  using one of the templates. If you've found a bug while using Muxit
+  with specific hardware, please include the hardware model, firmware
+  version, and how it's connected (USB, serial, network).
+- **Questions, ideas, "how do I…"**: start a thread in
+  [GitHub Discussions](https://github.com/muxit-io/muxit/discussions).
+- **Security vulnerabilities**: see [SECURITY.md](SECURITY.md). Do
+  **not** file a public issue for vulnerabilities.
