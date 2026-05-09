@@ -19,3 +19,13 @@ curl -fsSL https://raw.githubusercontent.com/muxit-io/muxit/main/install.sh | ba
 ```
 
 After install, run `muxit` and open <http://127.0.0.1:8765>.
+
+## License
+
+The contents of this repository — the Muxit Driver SDK, driver templates,
+and installer scripts — are licensed under the Apache License, Version 2.0
+(see [LICENSE](LICENSE) and [NOTICE](NOTICE)).
+
+The Muxit application itself (the binary distributed by the install scripts)
+is proprietary software, governed by the Muxit End User License Agreement
+which is presented and accepted on first launch.
