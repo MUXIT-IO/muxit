@@ -31,15 +31,14 @@
 
 set -euo pipefail
 
-# ─── Defaults ────────────────────────────────────────────────────────────
+# ─── Defaults ────────────────────────────────────────────────────────────────
 INSTALL_DIR="${HOME}/.local/share/muxit"
 DO_APT=1
 DO_SYMLINK=1
 ASSUME_YES=0
 REPO="muxit-io/muxit"
-TARBALL_PATTERN='muxit-linux-x64-v.*\.tar\.gz$'
 
-# ─── Colors / helpers ───────────────────────────────────────────────────────
+# ─── Colors / helpers ────────────────────────────────────────────────────────
 if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
   C_BOLD=$'\033[1m'; C_CYAN=$'\033[36m'; C_GREEN=$'\033[32m'
   C_YELLOW=$'\033[33m'; C_RED=$'\033[31m'; C_RESET=$'\033[0m'
@@ -60,7 +59,7 @@ confirm() {
   [[ -z "$ans" || "$ans" =~ ^[Yy]$ ]]
 }
 
-# ─── Args ───────────────────────────────────────────────────────────────────
+# ─── Args ────────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --install-dir) INSTALL_DIR="$2"; shift 2 ;;
@@ -72,7 +71,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# ─── Sanity ───────────────────────────────────────────────────────────────────
+# ─── Sanity ──────────────────────────────────────────────────────────────────
 section "Muxit installer"
 info "Install dir: $INSTALL_DIR"
 
@@ -88,7 +87,7 @@ else
   die "Neither sha256sum nor shasum is available."
 fi
 
-# ─── 1. Detect distro for apt step ──────────────────────────────────────────────
+# ─── 1. Detect distro for apt step ───────────────────────────────────────────
 if [[ $DO_APT -eq 1 ]]; then
   if ! command -v apt-get >/dev/null 2>&1; then
     warn "apt-get not found — this script's auto-install supports Ubuntu/Debian only."
@@ -97,7 +96,7 @@ if [[ $DO_APT -eq 1 ]]; then
   fi
 fi
 
-# ─── 2. System packages ───────────────────────────────────────────────────────────────
+# ─── 2. System packages ──────────────────────────────────────────────────────
 if [[ $DO_APT -eq 1 ]]; then
   section "System packages"
   pkgs_needed=()
@@ -124,7 +123,7 @@ if [[ $DO_APT -eq 1 ]]; then
   fi
 fi
 
-# ─── 3. dialout group ─────────────────────────────────────────────────────────────────
+# ─── 3. dialout group ────────────────────────────────────────────────────────
 section "Hardware access (dialout group)"
 if id -nG "$USER" | tr ' ' '\n' | grep -qx dialout; then
   ok "User '$USER' is already in 'dialout' group."
@@ -138,7 +137,7 @@ else
   fi
 fi
 
-# ─── 4. Find latest release ─────────────────────────────────────────────────────────────
+# ─── 4. Find latest release ──────────────────────────────────────────────────
 section "Latest release"
 release_json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" \
   || die "Failed to query GitHub Releases API."
@@ -147,23 +146,26 @@ tag="$(printf '%s' "$release_json" | grep -oE '"tag_name":\s*"[^"]+"' | head -1 
 [[ -n "$tag" ]] || die "Could not parse tag_name from GitHub Releases API."
 info "Version: $tag"
 
+# Anchor on the exact tag — releases sometimes carry stale tarballs from
+# previous versions, and we must not silently install one of those.
+tag_re="${tag//./\\.}"
+tar_name="muxit-linux-x64-${tag}.tar.gz"
 tar_url="$(printf '%s' "$release_json" \
   | grep -oE '"browser_download_url":\s*"[^"]+"' \
   | sed -E 's/.*"([^"]+)".*/\1/' \
-  | grep -E "$TARBALL_PATTERN" | head -1)"
-[[ -n "$tar_url" ]] || die "Release $tag has no muxit-linux-x64-v*.tar.gz asset."
+  | grep -E "/muxit-linux-x64-${tag_re}\.tar\.gz$" | head -1)"
+[[ -n "$tar_url" ]] || die "Release $tag has no $tar_name asset."
 
 cs_url="$(printf '%s' "$release_json" \
   | grep -oE '"browser_download_url":\s*"[^"]+"' \
   | sed -E 's/.*"([^"]+)".*/\1/' \
   | grep -E '/checksums\.txt$' | head -1)"
 
-# ─── 5. Download + verify ───────────────────────────────────────────────────────────────
+# ─── 5. Download + verify ────────────────────────────────────────────────────
 tmpdir="$(mktemp -d -t muxit-install-XXXXXX)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 section "Downloading"
-tar_name="$(basename "$tar_url")"
 info "$tar_name"
 curl -fsSL --output "$tmpdir/$tar_name" "$tar_url"
 size_mb="$(du -m "$tmpdir/$tar_name" | cut -f1)"
@@ -186,7 +188,7 @@ else
   warn "No checksums.txt asset in release — skipping verification."
 fi
 
-# ─── 6. Stop any running muxit, then extract ─────────────────────────────────────────
+# ─── 6. Stop any running muxit, then extract ─────────────────────────────────
 if pgrep -u "$USER" -x muxit >/dev/null 2>&1; then
   section "Stopping running muxit"
   pkill -u "$USER" -x muxit || true
@@ -223,7 +225,11 @@ fi
 [[ -x "$INSTALL_DIR/muxit" ]] || die "muxit binary not found / not executable at $INSTALL_DIR/muxit after extract."
 ok "Extracted."
 
-# ─── 7. Symlink in ~/.local/bin ─────────────────────────────────────────────────────────────
+# ─── 7. Symlink in ~/.local/bin ──────────────────────────────────────────────
+# launch_cmd is what we tell the user to type at the end. If we can't put a
+# `muxit` shim on $PATH (or we did but $PATH isn't picking it up in this
+# shell), fall back to the absolute path so the install isn't dead-on-arrival.
+launch_cmd="$INSTALL_DIR/muxit"
 if [[ $DO_SYMLINK -eq 1 ]]; then
   section "Symlink"
   bin_dir="$HOME/.local/bin"
@@ -233,15 +239,15 @@ if [[ $DO_SYMLINK -eq 1 ]]; then
 
   # Heads-up if ~/.local/bin isn't on PATH (rare on modern Ubuntu, common on minimal Debian).
   case ":$PATH:" in
-    *":$bin_dir:"*) ;;
-    *) warn "$bin_dir is NOT on \$PATH. Add this to ~/.bashrc:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+    *":$bin_dir:"*) launch_cmd="muxit" ;;
+    *) warn "$bin_dir is NOT on \$PATH. Add this to ~/.bashrc and start a new shell:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
   esac
 fi
 
-# ─── 8. Done ─────────────────────────────────────────────────────────────────────────
+# ─── 8. Done ─────────────────────────────────────────────────────────────────
 section "Done"
 info "Installed: $INSTALL_DIR/muxit"
 info "Version:   $tag"
 printf "\n%sLaunch Muxit:%s\n" "$C_GREEN" "$C_RESET"
-printf "  muxit\n"
+printf "  %s\n" "$launch_cmd"
 info "Then open http://127.0.0.1:8765 in your browser."
