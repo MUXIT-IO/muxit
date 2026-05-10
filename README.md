@@ -33,11 +33,21 @@ integration.
 irm https://raw.githubusercontent.com/muxit-io/muxit/main/install.ps1 | iex
 ```
 
-**Linux** (Ubuntu / Debian):
+**Linux** (Ubuntu / Debian, x86_64 or ARM64):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/muxit-io/muxit/main/install.sh | bash
 ```
+
+The installer auto-detects your CPU architecture and pulls the matching
+build. Supported targets:
+
+- **x86_64** — Intel / AMD desktops and servers (tested on Ubuntu
+  22.04 LTS and 24.04 LTS).
+- **aarch64 / arm64** — Raspberry Pi 4 / 5 on 64-bit Pi OS, and other
+  arm64 single-board computers. Available from **v0.32.0** onward.
+  32-bit Pi OS (`armv7l`) is not supported — reflash with the 64-bit
+  image.
 
 After install, run `muxit` and open <http://127.0.0.1:8765>.
 
