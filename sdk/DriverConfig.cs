@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 namespace Muxit.Driver.Sdk;
 
 /// <summary>
@@ -29,27 +29,96 @@ public static class DriverConfig
     // ── Argument extraction (for ExecuteAsync args) ─────────────────────
 
     /// <summary>
-    /// Extract a named value from dictionary-style action args.
-    /// If args is not a dictionary or key is missing, returns default.
+    /// Extract a named int from dictionary-style action args.
+    /// If <paramref name="args"/> is not a dictionary or the key is missing/null,
+    /// returns <paramref name="def"/>. Throws <see cref="ArgumentException"/> when
+    /// the value is present but is a non-scalar (dictionary / collection / host
+    /// script object) — silently <c>ToString()</c>ing those would let a
+    /// marshalling bug create nonsense values, so we fail loudly instead.
     /// </summary>
     public static int ArgInt(object? args, string key, int def)
-        => args is IDictionary<string, object?> dict && dict.TryGetValue(key, out var v) && v != null
-            ? Convert.ToInt32(v) : def;
+    {
+        if (!TryGetArg(args, key, out var v)) return def;
+        RejectComplex(key, v, "int");
+        try { return Convert.ToInt32(v); }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        { throw new ArgumentException($"Argument '{key}' expected int, got {Describe(v)}", ex); }
+    }
 
-    /// <summary>Extract a named double from dictionary-style action args.</summary>
+    /// <summary>Extract a named double from dictionary-style action args. See <see cref="ArgInt"/> for failure semantics.</summary>
     public static double ArgDouble(object? args, string key, double def)
-        => args is IDictionary<string, object?> dict && dict.TryGetValue(key, out var v) && v != null
-            ? Convert.ToDouble(v) : def;
+    {
+        if (!TryGetArg(args, key, out var v)) return def;
+        RejectComplex(key, v, "double");
+        try { return Convert.ToDouble(v); }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        { throw new ArgumentException($"Argument '{key}' expected double, got {Describe(v)}", ex); }
+    }
 
-    /// <summary>Extract a named string from dictionary-style action args.</summary>
+    /// <summary>Extract a named string from dictionary-style action args. See <see cref="ArgInt"/> for failure semantics.</summary>
     public static string ArgString(object? args, string key, string def)
-        => args is IDictionary<string, object?> dict && dict.TryGetValue(key, out var v) && v != null
-            ? v.ToString() ?? def : def;
+    {
+        if (!TryGetArg(args, key, out var v)) return def;
+        RejectComplex(key, v, "string");
+        return v switch
+        {
+            string s => s,
+            // Primitives have a meaningful ToString — keep the lenient behaviour
+            // so e.g. writeText({ path: 42 }) still produces "42".
+            bool or sbyte or byte or short or ushort or int or uint or long or ulong or float or double or decimal => v!.ToString()!,
+            _ => throw new ArgumentException($"Argument '{key}' expected string, got {Describe(v)}"),
+        };
+    }
 
-    /// <summary>Extract a named bool from dictionary-style action args.</summary>
+    /// <summary>Extract a named bool from dictionary-style action args. See <see cref="ArgInt"/> for failure semantics.</summary>
     public static bool ArgBool(object? args, string key, bool def)
-        => args is IDictionary<string, object?> dict && dict.TryGetValue(key, out var v) && v != null
-            ? Convert.ToBoolean(v) : def;
+    {
+        if (!TryGetArg(args, key, out var v)) return def;
+        RejectComplex(key, v, "bool");
+        try { return Convert.ToBoolean(v); }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException)
+        { throw new ArgumentException($"Argument '{key}' expected bool, got {Describe(v)}", ex); }
+    }
+
+    private static bool TryGetArg(object? args, string key, out object? value)
+    {
+        if (args is IDictionary<string, object?> dict && dict.TryGetValue(key, out var v) && v != null)
+        {
+            value = v;
+            return true;
+        }
+        value = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Reject dictionary, collection, and host script-object values up-front so the
+    /// caller gets a clear "expected X, got Y" error instead of a class-name string
+    /// or a confusing InvalidCastException from Convert.ToXxx.
+    /// </summary>
+    private static void RejectComplex(string key, object? value, string expected)
+    {
+        if (value is null) return;
+        if (value is string) return;
+        if (value is System.Collections.IDictionary
+            || value is System.Collections.IEnumerable
+            // The host marshals JS args via ClearScript; a V8 ScriptObject lives in
+            // Microsoft.ClearScript and would create an awkward dependency to
+            // reference directly. The type-name check stays robust without coupling
+            // the SDK to it.
+            || value.GetType().FullName?.StartsWith("Microsoft.ClearScript.", StringComparison.Ordinal) == true)
+        {
+            throw new ArgumentException($"Argument '{key}' expected {expected}, got {Describe(value)}");
+        }
+    }
+
+    private static string Describe(object? value) =>
+        value switch
+        {
+            null => "null",
+            string s => $"string \"{s}\"",
+            _ => value.GetType().Name,
+        };
 
     /// <summary>
     /// Extract a double array from action args.

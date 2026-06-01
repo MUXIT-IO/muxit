@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * My Driver — Tier 1 (JavaScript) Muxit driver template.
  *
@@ -60,17 +60,18 @@ export default {
   _count: 0,
   _enabled: false,
   _initTime: 0,
-  _streamEmitter: null,
   _streamTimer: null,
 
   // ── Lifecycle ────────────────────────────────────────────────────────
 
   /**
-   * Called once at startup with the connector config. Open any connections,
-   * start background tasks, and capture the stream emitter here.
+   * Called once at startup with the connector config. Open any connections
+   * and start background tasks here.
    *
-   * The host passes `_streamEmitter` on the driver object before calling
-   * init, so you can use it from any method below.
+   * To push data on a stream, call the host-provided global
+   * `__emitStream("<stream-name>", payload)` — `<stream-name>` must be one
+   * of the names listed in `meta.streams`. (There is no `this._streamEmitter`;
+   * the emitter is a sandbox global, not a property on the driver object.)
    */
   async init(config) {
     this._label = config?.label ?? "My Device";
@@ -80,9 +81,9 @@ export default {
 
     // Emit a tick on the "tick" stream every second.
     this._streamTimer = setInterval(() => {
-      if (!this._enabled || !this._streamEmitter) return;
+      if (!this._enabled || typeof __emitStream !== "function") return;
       this._count++;
-      this._streamEmitter("tick", {
+      __emitStream("tick", {
         timestamp: new Date().toISOString(),
         count: this._count,
       });
