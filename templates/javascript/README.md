@@ -68,9 +68,11 @@ The default export is a plain object with six methods:
 Plus a `meta` object describing the driver's name, version, group,
 properties, actions, and streams.
 
-The host assigns a function to `this._streamEmitter` before calling `init`.
-Call `this._streamEmitter("<stream-name>", payload)` to push data on one
-of the streams listed in `meta.streams`.
+To push data on a stream, call the host-provided global
+`__emitStream("<stream-name>", payload)` from any method — `<stream-name>`
+must be one of the names listed in `meta.streams`. The emitter is a sandbox
+global, **not** a property on the driver object (there is no
+`this._streamEmitter`).
 
 ## License
 

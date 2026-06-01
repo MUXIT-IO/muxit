@@ -21,9 +21,15 @@ integration.
   devices in JavaScript or via the HTTP/WebSocket API.
 - **AI integration** — let an LLM read sensor values and drive actions,
   scoped to what you whitelist.
-- **Open driver SDK** — write a driver for your own hardware in C#
-  (Tier 3, full DLL) or JavaScript (Tier 1, sandboxed). See
-  [`sdk/`](sdk/) and [`templates/`](templates/).
+- **Built-in protocols + AI** — most custom hardware needs no driver at
+  all. If your device speaks SCPI, prints text lines, or emits binary
+  frames, pick a built-in protocol (`Scpi` / `LineText` / `BinaryStream`)
+  and let the AI assistant draft and test the connector against your
+  hardware. See the [docs](https://docs.muxit.io/reference/concepts).
+- **Open driver SDK** — when a protocol can't express your device (vendor
+  SDKs, native libraries, Python-only stacks), write a driver in JavaScript
+  (Tier 1, sandboxed), Python (Tier 2, subprocess-isolated), or C# (Tier 3,
+  full DLL). See [`sdk/`](sdk/) and [`templates/`](templates/).
 
 ## Install
 
@@ -55,8 +61,9 @@ After install, run `muxit` and open <http://127.0.0.1:8765>.
 
 - **User docs**: <https://docs.muxit.io>
 - **Driver SDK**: [`sdk/README.md`](sdk/README.md)
-- **Driver templates**: [`templates/csharp/`](templates/csharp/) (Tier 3)
-  and [`templates/javascript/`](templates/javascript/) (Tier 1)
+- **Driver templates**: [`templates/javascript/`](templates/javascript/)
+  (Tier 1), [`templates/python/`](templates/python/) (Tier 2), and
+  [`templates/csharp/`](templates/csharp/) (Tier 3)
 - **Driver registry**: <https://github.com/muxit-io/driver-registry>
 
 ## Status
