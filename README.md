@@ -39,19 +39,25 @@ integration.
 irm https://raw.githubusercontent.com/muxit-io/muxit/main/install.ps1 | iex
 ```
 
-**Linux** (Ubuntu / Debian, x86_64 or ARM64):
+**macOS / Linux** (bash):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/muxit-io/muxit/main/install.sh | bash
 ```
 
-The installer auto-detects your CPU architecture and pulls the matching
-build. Supported targets:
+The `install.sh` script auto-detects your OS and CPU architecture and
+pulls the matching build. Supported targets:
 
-- **x86_64** — Intel / AMD desktops and servers (tested on Ubuntu
+- **macOS (Apple Silicon / Intel)** — macOS 12+ on `arm64` or `x86_64`.
+  The builds aren't notarized yet, so the script clears the Gatekeeper
+  quarantine attribute for you (`xattr -dr com.apple.quarantine`); it
+  also offers to `brew install ffmpeg` for camera capture. Video
+  recording and the Vision driver are unavailable on macOS (no OpenCV
+  runtime); everything else works.
+- **Linux x86_64** — Intel / AMD desktops and servers (tested on Ubuntu
   22.04 LTS and 24.04 LTS).
-- **aarch64 / arm64** — Raspberry Pi 4 / 5 on 64-bit Pi OS, and other
-  arm64 single-board computers. Available from **v0.32.0** onward.
+- **Linux aarch64 / arm64** — Raspberry Pi 4 / 5 on 64-bit Pi OS, and
+  other arm64 single-board computers. Available from **v0.32.0** onward.
   32-bit Pi OS (`armv7l`) is not supported — reflash with the 64-bit
   image.
 
