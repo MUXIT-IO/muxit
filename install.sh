@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Muxit installer for Linux (Ubuntu / Debian / derivatives).
+# Muxit installer for Linux (Ubuntu / Debian / derivatives) and macOS.
 #
 # Usage (end-user):
 #   curl -fsSL https://raw.githubusercontent.com/muxit-io/muxit/main/install.sh | bash
@@ -9,25 +9,37 @@
 #
 # Flags:
 #   --install-dir <path>    Override install dir (default: $HOME/.local/share/muxit).
-#   --no-apt                Skip apt-install of system dependencies (ffmpeg etc.).
-#                           Useful for unattended re-installs or non-apt distros.
+#   --no-apt                Skip system-dependency install (apt on Linux,
+#                           Homebrew on macOS). Useful for unattended re-installs
+#                           or non-apt distros.
 #   --no-symlink            Skip creating ~/.local/bin/muxit.
 #   --yes                   Don't prompt for confirmation; assume yes everywhere.
 #
 # What this script does:
-#   1. Detects distro / arch (apt-only Ubuntu/Debian; x86_64 + aarch64).
-#   2. Installs system packages with sudo apt: ffmpeg, libayatana-appindicator3-1,
-#      xdg-utils. Asks for confirmation unless --yes.
-#   3. Adds $USER to the `dialout` group if needed (serial-port access).
+#   1. Detects OS / arch. Linux: apt-only Ubuntu/Debian, x86_64 + aarch64.
+#      macOS: Apple Silicon (arm64) + Intel (x86_64).
+#   2. Installs system packages — Linux (sudo apt): ffmpeg,
+#      libayatana-appindicator3-1, xdg-utils; macOS (Homebrew): ffmpeg.
+#      Asks for confirmation unless --yes.
+#   3. Linux only: adds $USER to the `dialout` group (serial-port access).
+#      macOS needs no group for serial (/dev/tty.* / /dev/cu.*).
 #   4. Queries GitHub Releases API for the matching muxit-<rid>-<tag>.tar.gz.
 #   5. Downloads the tarball + checksums.txt and verifies SHA256.
 #   6. Stops any running muxit, then extracts into ~/.local/share/muxit/.
 #      An existing workspace/ directory is preserved (never overwritten).
+#      macOS: clears the Gatekeeper quarantine xattr so the unsigned binary runs.
 #   7. Symlinks ~/.local/bin/muxit → installdir/muxit so it's on $PATH.
 #   8. Prints how to launch.
 #
 # Per-user install: no sudo for the extract step, only for `apt install` and
-# `usermod`. Nothing outside of ~/.local/{share,bin}/ is touched on disk.
+# `usermod` (Linux). Nothing outside of ~/.local/{share,bin}/ is touched on disk.
+#
+# NOTE (macOS): release binaries are not yet code-signed or notarized, so
+# Gatekeeper would normally block them. This script clears the quarantine
+# attribute on the extracted tree; if you download manually instead, run
+# `xattr -dr com.apple.quarantine <install-dir>` yourself. Vision drivers
+# (Webcam / Onvif) are unavailable on macOS — there is no OpenCV native
+# runtime for it — but the rest of Muxit runs normally.
 
 set -euo pipefail
 
@@ -87,31 +99,52 @@ else
   die "Neither sha256sum nor shasum is available."
 fi
 
-# ─── Architecture ────────────────────────────────────────────────────────────
-# Map `uname -m` → .NET RID. Releases ship linux-x64 (Intel/AMD) and
-# linux-arm64 (Raspberry Pi 4/5 on 64-bit Pi OS, other arm64 SBCs).
+# ─── OS + Architecture ───────────────────────────────────────────────────────
+# Map `uname -s`/`uname -m` → .NET RID. Releases ship linux-x64 (Intel/AMD),
+# linux-arm64 (Raspberry Pi 4/5 on 64-bit Pi OS, other arm64 SBCs),
+# osx-arm64 (Apple Silicon) and osx-x64 (Intel Macs).
 # 32-bit ARM (armv7l / armhf) is intentionally not supported — reflash
 # the SD card with a 64-bit Pi OS / aarch64 image and re-run.
+os="$(uname -s)"
 arch="$(uname -m)"
-case "$arch" in
-  x86_64|amd64)         RID="linux-x64" ;;
-  aarch64|arm64)        RID="linux-arm64" ;;
-  armv7l|armv6l|armhf)  die "32-bit ARM ($arch) is not supported. Reflash with 64-bit Pi OS / aarch64 and re-run." ;;
-  *)                    die "Unsupported CPU architecture: $arch (supported: x86_64, aarch64)." ;;
+case "$os" in
+  Linux)
+    case "$arch" in
+      x86_64|amd64)         RID="linux-x64" ;;
+      aarch64|arm64)        RID="linux-arm64" ;;
+      armv7l|armv6l|armhf)  die "32-bit ARM ($arch) is not supported. Reflash with 64-bit Pi OS / aarch64 and re-run." ;;
+      *)                    die "Unsupported CPU architecture: $arch (supported: x86_64, aarch64)." ;;
+    esac ;;
+  Darwin)
+    case "$arch" in
+      arm64)                RID="osx-arm64" ;;
+      x86_64)               RID="osx-x64" ;;
+      *)                    die "Unsupported macOS architecture: $arch (supported: arm64, x86_64)." ;;
+    esac ;;
+  *)
+    die "Unsupported OS: $os (this installer supports Linux and macOS)." ;;
 esac
-info "Architecture: $arch → $RID"
+info "Platform: $os $arch → $RID"
 
-# ─── 1. Detect distro for apt step ───────────────────────────────────────────
+# ─── 1. Detect package manager for the system-deps step ──────────────────────
 if [[ $DO_APT -eq 1 ]]; then
-  if ! command -v apt-get >/dev/null 2>&1; then
-    warn "apt-get not found — this script's auto-install supports Ubuntu/Debian only."
-    warn "Skipping system-package install. Install manually: ffmpeg libayatana-appindicator3-1 xdg-utils"
-    DO_APT=0
+  if [[ "$os" == "Linux" ]]; then
+    if ! command -v apt-get >/dev/null 2>&1; then
+      warn "apt-get not found — this script's auto-install supports Ubuntu/Debian only."
+      warn "Skipping system-package install. Install manually: ffmpeg libayatana-appindicator3-1 xdg-utils"
+      DO_APT=0
+    fi
+  elif [[ "$os" == "Darwin" ]]; then
+    if ! command -v brew >/dev/null 2>&1; then
+      warn "Homebrew (brew) not found — cannot auto-install system packages."
+      warn "Skipping. Install Homebrew from https://brew.sh then run: brew install ffmpeg"
+      DO_APT=0
+    fi
   fi
 fi
 
 # ─── 2. System packages ──────────────────────────────────────────────────────
-if [[ $DO_APT -eq 1 ]]; then
+if [[ $DO_APT -eq 1 && "$os" == "Linux" ]]; then
   section "System packages"
   pkgs_needed=()
   # ffmpeg → required for Onvif RTSP capture (subprocess pipeline).
@@ -135,19 +168,39 @@ if [[ $DO_APT -eq 1 ]]; then
       warn "Skipped. Install manually later: sudo apt install ${pkgs_needed[*]}"
     fi
   fi
+elif [[ $DO_APT -eq 1 && "$os" == "Darwin" ]]; then
+  section "System packages"
+  # macOS: only ffmpeg is worth auto-installing (Onvif RTSP capture). The tray
+  # icon and browser-open use native APIs (no appindicator / xdg-utils needed).
+  # Vision drivers are unavailable on macOS regardless, so OpenCV is moot.
+  if command -v ffmpeg >/dev/null 2>&1; then
+    ok "ffmpeg already installed."
+  else
+    info "Need to install: ffmpeg (for Onvif camera capture)"
+    if confirm "Run 'brew install ffmpeg'?"; then
+      brew install ffmpeg
+      ok "ffmpeg installed."
+    else
+      warn "Skipped. Install manually later: brew install ffmpeg"
+    fi
+  fi
 fi
 
-# ─── 3. dialout group ────────────────────────────────────────────────────────
-section "Hardware access (dialout group)"
-if id -nG "$USER" | tr ' ' '\n' | grep -qx dialout; then
-  ok "User '$USER' is already in 'dialout' group."
-else
-  warn "User '$USER' is NOT in 'dialout' group — serial-port drivers will fail with 'Permission denied'."
-  if confirm "Add '$USER' to 'dialout' group with sudo?"; then
-    sudo usermod -aG dialout "$USER"
-    warn "You must log out and back in (or run 'newgrp dialout') for the group change to take effect."
+# ─── 3. Serial-port access ───────────────────────────────────────────────────
+# Linux gates serial devices behind the `dialout` group. macOS does not — any
+# user can open /dev/tty.* and /dev/cu.* — so there's nothing to do there.
+if [[ "$os" == "Linux" ]]; then
+  section "Hardware access (dialout group)"
+  if id -nG "$USER" | tr ' ' '\n' | grep -qx dialout; then
+    ok "User '$USER' is already in 'dialout' group."
   else
-    warn "Skipped. Fix later: sudo usermod -aG dialout $USER && newgrp dialout"
+    warn "User '$USER' is NOT in 'dialout' group — serial-port drivers will fail with 'Permission denied'."
+    if confirm "Add '$USER' to 'dialout' group with sudo?"; then
+      sudo usermod -aG dialout "$USER"
+      warn "You must log out and back in (or run 'newgrp dialout') for the group change to take effect."
+    else
+      warn "Skipped. Fix later: sudo usermod -aG dialout $USER && newgrp dialout"
+    fi
   fi
 fi
 
@@ -171,6 +224,9 @@ tar_url="$(printf '%s' "$release_json" \
 if [[ -z "$tar_url" ]]; then
   if [[ "$RID" == "linux-arm64" ]]; then
     die "Release $tag has no $tar_name asset. linux-arm64 builds were added in v0.32.0 — older releases ship x64 only."
+  fi
+  if [[ "$RID" == osx-* ]]; then
+    die "Release $tag has no $tar_name asset. macOS builds are newly added — only releases that ship an osx-* archive can be installed this way."
   fi
   die "Release $tag has no $tar_name asset."
 fi
@@ -231,7 +287,7 @@ for sub in wwwroot runtimes Assets workspace-template; do
   rm -rf "$INSTALL_DIR/$sub"
 done
 find "$INSTALL_DIR" -maxdepth 1 -type f \
-  \( -name 'muxit' -o -name '*.dll' -o -name '*.so' -o -name '*.json' -o -name '*.xml' -o -name '*.pdb' \) \
+  \( -name 'muxit' -o -name '*.dll' -o -name '*.so' -o -name '*.dylib' -o -name '*.json' -o -name '*.xml' -o -name '*.pdb' \) \
   -delete 2>/dev/null || true
 
 tar -xzf "$tmpdir/$tar_name" -C "$INSTALL_DIR"
@@ -243,6 +299,19 @@ fi
 
 [[ -x "$INSTALL_DIR/muxit" ]] || die "muxit binary not found / not executable at $INSTALL_DIR/muxit after extract."
 ok "Extracted."
+
+# macOS: the release archive isn't signed/notarized yet, so files unpacked
+# from a downloaded tarball carry the com.apple.quarantine xattr and Gatekeeper
+# refuses to run them ("cannot be opened because the developer cannot be
+# verified"). Strip the attribute recursively so the binary launches. This is
+# a no-op once releases are properly notarized.
+if [[ "$os" == "Darwin" ]]; then
+  if xattr -dr com.apple.quarantine "$INSTALL_DIR" 2>/dev/null; then
+    ok "Cleared Gatekeeper quarantine attribute."
+  else
+    warn "Could not clear quarantine attr; if launch is blocked run: xattr -dr com.apple.quarantine \"$INSTALL_DIR\""
+  fi
+fi
 
 # ─── 7. Symlink in ~/.local/bin ──────────────────────────────────────────────
 # launch_cmd is what we tell the user to type at the end. If we can't put a
