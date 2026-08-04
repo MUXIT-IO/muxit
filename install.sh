@@ -87,8 +87,10 @@ done
 section "Muxit installer"
 info "Install dir: $INSTALL_DIR"
 
-# Need: curl, tar, sha256sum (or shasum), getent
-for cmd in curl tar getent; do
+# Need: curl, tar, sha256sum (or shasum). No getent — it's a glibc tool absent
+# on macOS (which this installer supports) and we never actually call it; the
+# Linux dialout-group check below uses `id -nG`, not getent.
+for cmd in curl tar; do
   command -v "$cmd" >/dev/null 2>&1 || die "Required command '$cmd' is not on PATH."
 done
 if command -v sha256sum >/dev/null 2>&1; then
